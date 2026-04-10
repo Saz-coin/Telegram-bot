@@ -1,105 +1,96 @@
-import json
-import os
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+const { Telegraf, Markup } = require('telegraf');
+const fs = require('fs');
+const http = require('http');
 
-# --- الإعدادات ---
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-CHANNEL_ID = '@Soomcoin1' 
-CHANNEL_URL = 'https://t.me/Soomcoin1'
-COIN_NAME = 'Soom'
-POINTS_PER_REFERRAL = 100 
+// --- الإعدادات الخاصة بك ---
+const BOT_TOKEN = '8467862987:AAGnQyQ0nURo3Kn8-9ZtNYE8I0Y-jyeFaV8';
+const CHANNEL_ID = '@Soomcoin1'; 
+const CHANNEL_LINK = 'https://t.me/Soomcoin1';
 
-DB_FILE = 'database.json'
+const bot = new Telegraf(BOT_TOKEN);
 
-# --- إدارة البيانات ---
-def load_data():
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, 'r') as f:
-                return json.load(f)
-        except: return {}
-    return {}
+// --- منع البوت من النوم (Render Keep-Alive) ---
+// هذا السيرفر مهم جداً ليعمل البوت على Render بدون توقف
+http.createServer((req, res) => {
+    res.write("Soom Coin Bot is Running!");
+    res.end();
+}).listen(process.env.PORT || 8080);
 
-def save_data(data):
-    with open(DB_FILE, 'w') as f:
-        json.dump(data, f, indent=4)
+// --- نظام حفظ البيانات (Database) ---
+const DB_FILE = './users_data.json';
+let db = {};
+if (fs.existsSync(DB_FILE)) {
+    try {
+        db = JSON.parse(fs.readFileSync(DB_FILE));
+    } catch (e) { db = {}; }
+}
 
-user_data = load_data()
+function saveDB() {
+    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+}
 
-# --- الأوامر ---
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    args = context.args
-    
-    if user_id not in user_data:
-        user_data[user_id] = {'points': 0, 'referred_by': None, 'credited': False}
-        if args and args[0].isdigit():
-            referrer_id = args[0]
-            if referrer_id != user_id:
-                user_data[user_id]['referred_by'] = referrer_id
-        save_data(user_data)
+// --- نظام الحماية من الانهيار (Anti-Crash) ---
+process.on('uncaughtException', (err) => console.error('خطأ تم تفاديه:', err));
+process.on('unhandledRejection', (reason) => console.error('فشل تم تفاديه:', reason));
 
-    keyboard = [
-        [InlineKeyboardButton("📢 Join Channel", url=CHANNEL_URL)],
-        [InlineKeyboardButton("✅ Verify Subscription", callback_data='check_sub')],
-        [InlineKeyboardButton("💰 Balance", callback_data='get_balance')],
-        [InlineKeyboardButton("🔗 Referral Link", callback_data='get_link')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(
-        f"🚀 Welcome to **{COIN_NAME}** Bot!\n\n"
-        f"Please join our channel first, then click verify to start earning {COIN_NAME}.",
-        reply_markup=reply_markup
-    )
+// --- وظيفة التحقق من الاشتراك الإجباري ---
+async function checkSub(ctx) {
+    try {
+        const member = await ctx.telegram.getChatMember(CHANNEL_ID, ctx.from.id);
+        return ['member', 'administrator', 'creator'].includes(member.status);
+    } catch (e) { return false; }
+}
 
-async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = str(query.from_user.id)
-    
-    try:
-        member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=int(user_id))
-        if member.status in ['member', 'administrator', 'creator']:
-            referrer_id = user_data[user_id].get('referred_by')
-            if referrer_id and not user_data[user_id].get('credited'):
-                if referrer_id in user_data:
-                    user_data[referrer_id]['points'] += POINTS_PER_REFERRAL
-                    user_data[user_id]['credited'] = True
-                    save_data(user_data)
-                    try:
-                        await context.bot.send_message(chat_id=int(referrer_id), text=f"🎉 Success! +{POINTS_PER_REFERRAL} {COIN_NAME}")
-                    except: pass
+// --- أمر البداية مع نظام الإحالات ---
+bot.start(async (ctx) => {
+    const userId = ctx.from.id;
+    const refId = ctx.payload;
 
-            await query.answer("✅ Verified!")
-            await query.edit_message_text(f"Status: Verified! ✅\nShare your link to earn more **{COIN_NAME}**.")
-        else:
-            await query.answer("❌ Join the channel first!", show_alert=True)
-    except:
-        await query.answer("⚠️ Admin error! Make sure the bot is Admin in the channel.", show_alert=True)
+    if (!db[userId]) {
+        db[userId] = { points: 0, referrals: 0 };
+        if (refId && db[refId] && refId != userId) {
+            db[refId].points += 10;
+            db[refId].referrals += 1;
+            saveDB();
+            try { bot.telegram.sendMessage(refId, "✅ انضم شخص جديد برابطك وحصلت على 10 نقاط!"); } catch(e){}
+        }
+        saveDB();
+    }
 
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = str(query.from_user.id)
-    
-    if query.data == 'get_balance':
-        points = user_data.get(user_id, {}).get('points', 0)
-        await query.answer()
-        await query.message.reply_text(f"📊 Your Balance: **{points}** {COIN_NAME}")
-        
-    elif query.data == 'get_link':
-        bot_username = (await context.bot.get_me()).username
-        link = f"https://t.me/{bot_username}?start={user_id}"
-        await query.answer()
-        await query.message.reply_text(f"🔗 Your Link: {link}")
+    const isSubbed = await checkSub(ctx);
+    if (!isSubbed) {
+        return ctx.reply(`⚠️ يجب عليك الاشتراك في قناة المشروع أولاً:\n${CHANNEL_LINK}`, 
+            Markup.inlineKeyboard([
+                [Markup.button.url('انضم للقناة', CHANNEL_LINK)],
+                [Markup.button.callback('تم الاشتراك ✅', 'verify')]
+            ])
+        );
+    }
+    showMenu(ctx);
+});
 
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(check_subscription, pattern='check_sub'))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.run_polling()
+function showMenu(ctx) {
+    ctx.replyWithMarkdown(`🚀 *مرحباً بك في مشروع SOOM*\n\nابدأ بجمع النقاط الآن!`, 
+        Markup.keyboard([['💰 رصيدي', '👥 دعوة الأصدقاء'], ['📢 قناة المشروع']]).resize());
+}
 
-if __name__ == '__main__':
-    main()
-    
+bot.action('verify', async (ctx) => {
+    if (await checkSub(ctx)) {
+        await ctx.answerCbQuery('تم التحقق! ✨');
+        showMenu(ctx);
+    } else {
+        await ctx.answerCbQuery('❌ لم تشترك بعد!', { show_alert: true });
+    }
+});
+
+bot.hears('💰 رصيدي', (ctx) => {
+    const user = db[ctx.from.id] || { points: 0, referrals: 0 };
+    ctx.reply(`💎 رصيدك: ${user.points} نقطة\n👥 الإحالات: ${user.referrals}`);
+});
+
+bot.hears('👥 دعوة الأصدقاء', (ctx) => {
+    ctx.reply(`رابط دعوتك الخاص:\nhttps://t.me/${ctx.botInfo.username}?start=${ctx.from.id}`);
+});
+
+// تشغيل البوت
+bot.launch().then(() => console.log('Soom Bot is Online!'));
