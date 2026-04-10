@@ -1,0 +1,12 @@
+{
+  "name": "soom-coin-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot for Soom project",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "telegraf": "^4.16.3"
+  }
+}
