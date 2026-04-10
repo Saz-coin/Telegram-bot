@@ -9,7 +9,7 @@ TOKEN = "8467862987:AAGnQyQ0nURo3Kn8-9ZtNYE8I0Y-jyeFaV8"
 CHANNEL_ID = "@Soomcoin1"
 CHANNEL_LINK = "https://t.me/Soomcoin1"
 
-# --- Keep-Alive Server ---
+# --- سيرفر لمنع توقف Render ---
 app = Flask('')
 @app.route('/')
 def home(): return "Soom Bot is Active"
@@ -28,32 +28,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     args = context.args
     
-    if uid not in db:
-        db[uid] = {"p": 0, "r": 0, "s": False}
-        if args and args[0].isdigit():
-            ref_id = int(args[0])
-            if ref_id in db and ref_id != uid:
-                db[ref_id]["p"] += 100
-                db[ref_id]["r"] += 1
+    # إعادة ضبط حالة المستخدم عند الضغط على Start لرؤية الأزرار
+    db[uid] = {"p": 0, "r": 0, "s": False}
+    
+    if args and args[0].isdigit():
+        ref_id = int(args[0])
+        if ref_id in db and ref_id != uid:
+            db[ref_id]["p"] += 100
+            db[ref_id]["r"] += 1
 
-    # التعديل هنا: إذا لم يتم تفعيل مكافأة الاشتراك (s == False)
-    # سيظهر البوت أزرار التحقق حتى لو كان العضو مشتركاً فعلياً
-    if not db[uid].get("s", False):
-        keyboard = [
-            [InlineKeyboardButton("📢 1. Join Channel", url=CHANNEL_LINK)],
-            [InlineKeyboardButton("✅ 2. Verify & Claim 50 Pts", callback_data='verify_now')]
-        ]
-        await update.message.reply_text(
-            "🚀 *Welcome to SOOM Project*\n\nJoin our channel to earn your first **50 Points**!",
-            reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
-        )
-    else:
-        await show_menu(update)
+    # إظهار زر الاشتراك وزر التأكيد فوراً
+    keyboard = [
+        [InlineKeyboardButton("📢 1. Join Channel", url=CHANNEL_LINK)],
+        [InlineKeyboardButton("✅ 2. Verify & Claim 50 Pts", callback_data='verify_now')]
+    ]
+    await update.message.reply_text(
+        "🚀 *Welcome to SOOM Project*\n\nJoin our channel and click verify to get your **50 Points** bonus!",
+        reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
+    )
 
 async def show_menu(update):
     kb = [['💰 My Balance', '👥 Invite Friends'], ['📢 Official Channel']]
     markup = ReplyKeyboardMarkup(kb, resize_keyboard=True)
-    text = "💎 *SOOM Dashboard*\nYour account is verified!"
+    text = "💎 *SOOM Dashboard*\nYour account is now verified and active!"
+    
     if update.message:
         await update.message.reply_text(text, reply_markup=markup, parse_mode='Markdown')
     else:
@@ -65,13 +63,15 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     if await is_sub(uid, context):
-        db[uid]["p"] += 50
-        db[uid]["s"] = True # تفعيل المكافأة ومنع ظهور الزر مرة أخرى
-        await query.message.reply_text("🎉 Verified! +50 Points added.")
+        if not db[uid].get("s", False):
+            db[uid]["p"] += 50
+            db[uid]["s"] = True
+            await query.message.reply_text("🎉 Verified! +50 Points added to your balance.")
+        
         await query.message.delete()
         await show_menu(update)
     else:
-        await query.message.reply_text("❌ Please join @Soomcoin1 first!")
+        await query.message.reply_text("❌ You haven't joined yet! Please join @Soomcoin1 and then click Verify.")
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -95,4 +95,4 @@ if __name__ == '__main__':
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     application.add_handler(CallbackQueryHandler(verify_callback, pattern='verify_now'))
     application.run_polling(drop_pending_updates=True)
-    
+                 
