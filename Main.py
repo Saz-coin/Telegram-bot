@@ -2,21 +2,20 @@ const { Telegraf, Markup } = require('telegraf');
 const fs = require('fs');
 const http = require('http');
 
-// --- الإعدادات الخاصة بك ---
+// --- Settings ---
 const BOT_TOKEN = '8467862987:AAGnQyQ0nURo3Kn8-9ZtNYE8I0Y-jyeFaV8';
 const CHANNEL_ID = '@Soomcoin1'; 
 const CHANNEL_LINK = 'https://t.me/Soomcoin1';
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// --- منع البوت من النوم (Render Keep-Alive) ---
-// هذا السيرفر مهم جداً ليعمل البوت على Render بدون توقف
+// --- Render Keep-Alive Server ---
 http.createServer((req, res) => {
     res.write("Soom Coin Bot is Running!");
     res.end();
 }).listen(process.env.PORT || 8080);
 
-// --- نظام حفظ البيانات (Database) ---
+// --- Database Logic ---
 const DB_FILE = './users_data.json';
 let db = {};
 if (fs.existsSync(DB_FILE)) {
@@ -29,11 +28,11 @@ function saveDB() {
     fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 }
 
-// --- نظام الحماية من الانهيار (Anti-Crash) ---
-process.on('uncaughtException', (err) => console.error('خطأ تم تفاديه:', err));
-process.on('unhandledRejection', (reason) => console.error('فشل تم تفاديه:', reason));
+// --- Anti-Crash Logic ---
+process.on('uncaughtException', (err) => console.error('Error caught:', err));
+process.on('unhandledRejection', (reason) => console.error('Rejection caught:', reason));
 
-// --- وظيفة التحقق من الاشتراك الإجباري ---
+// --- Subscription Check ---
 async function checkSub(ctx) {
     try {
         const member = await ctx.telegram.getChatMember(CHANNEL_ID, ctx.from.id);
@@ -41,7 +40,7 @@ async function checkSub(ctx) {
     } catch (e) { return false; }
 }
 
-// --- أمر البداية مع نظام الإحالات ---
+// --- Commands ---
 bot.start(async (ctx) => {
     const userId = ctx.from.id;
     const refId = ctx.payload;
@@ -52,17 +51,17 @@ bot.start(async (ctx) => {
             db[refId].points += 10;
             db[refId].referrals += 1;
             saveDB();
-            try { bot.telegram.sendMessage(refId, "✅ انضم شخص جديد برابطك وحصلت على 10 نقاط!"); } catch(e){}
+            try { bot.telegram.sendMessage(refId, "New referral joined! +10 points."); } catch(e){}
         }
         saveDB();
     }
 
     const isSubbed = await checkSub(ctx);
     if (!isSubbed) {
-        return ctx.reply(`⚠️ يجب عليك الاشتراك في قناة المشروع أولاً:\n${CHANNEL_LINK}`, 
+        return ctx.reply(`Welcome to SOOM Project. Please join our channel to start: \n${CHANNEL_LINK}`, 
             Markup.inlineKeyboard([
-                [Markup.button.url('انضم للقناة', CHANNEL_LINK)],
-                [Markup.button.callback('تم الاشتراك ✅', 'verify')]
+                [Markup.button.url('Join Channel', CHANNEL_LINK)],
+                [Markup.button.callback('I joined ✅', 'verify')]
             ])
         );
     }
@@ -70,27 +69,26 @@ bot.start(async (ctx) => {
 });
 
 function showMenu(ctx) {
-    ctx.replyWithMarkdown(`🚀 *مرحباً بك في مشروع SOOM*\n\nابدأ بجمع النقاط الآن!`, 
-        Markup.keyboard([['💰 رصيدي', '👥 دعوة الأصدقاء'], ['📢 قناة المشروع']]).resize());
+    ctx.reply("Welcome to SOOM! Start collecting points now.", 
+        Markup.keyboard([['My Balance', 'Invite Friends'], ['Our Channel']]).resize());
 }
 
 bot.action('verify', async (ctx) => {
     if (await checkSub(ctx)) {
-        await ctx.answerCbQuery('تم التحقق! ✨');
+        await ctx.answerCbQuery('Verified! ✨');
         showMenu(ctx);
     } else {
-        await ctx.answerCbQuery('❌ لم تشترك بعد!', { show_alert: true });
+        await ctx.answerCbQuery('Not subscribed yet!', { show_alert: true });
     }
 });
 
-bot.hears('💰 رصيدي', (ctx) => {
+bot.hears('My Balance', (ctx) => {
     const user = db[ctx.from.id] || { points: 0, referrals: 0 };
-    ctx.reply(`💎 رصيدك: ${user.points} نقطة\n👥 الإحالات: ${user.referrals}`);
+    ctx.reply(`Balance: ${user.points} points\nReferrals: ${user.referrals}`);
 });
 
-bot.hears('👥 دعوة الأصدقاء', (ctx) => {
-    ctx.reply(`رابط دعوتك الخاص:\nhttps://t.me/${ctx.botInfo.username}?start=${ctx.from.id}`);
+bot.hears('Invite Friends', (ctx) => {
+    ctx.reply(`Your invite link:\nhttps://t.me/${ctx.botInfo.username}?start=${ctx.from.id}`);
 });
 
-// تشغيل البوت
-bot.launch().then(() => console.log('Soom Bot is Online!'));
+bot.launch().then(() => console.log('Bot is Online!'));
