@@ -1,2 +1,3 @@
-python-telegram-bot
+supabase
+python-telegram-bot==20.8
 flask
